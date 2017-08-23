@@ -45,7 +45,7 @@ func Parse(spec string) (Schedule, error) {
 	}
 
 	if len(fields) == 2 {
-
+		return NewDateTimeSchedule(fields[0], fields[1])
 	}
 
 	return nil, fmt.Errorf("unknow spec format")
