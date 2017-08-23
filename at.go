@@ -72,7 +72,11 @@ func (a *At) AddFunc(spec string, cmd func()) error {
 
 // AddJob adds a Job to the At to be run on the given schedule.
 func (a *At) AddJob(spec string, cmd Job) error {
-	// todo: implement
+	schedule, err := Parse(spec)
+	if err != nil {
+		return err
+	}
+	a.Schedule(schedule, cmd)
 	return nil
 }
 
