@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// DateTimeSchedule specifies a time for job executing
+// SpecSchedule specifies a time for job executing
 // Time definition format is 'HH:MM[am|pm] [Month] [Date]'
 type SpecSchedule struct {
 	Month  int
