@@ -16,13 +16,11 @@ type TimeSchedule struct {
 
 func (s *TimeSchedule) At(t time.Time) time.Time {
 	year, mon, day := t.Date()
-	value := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", year, mon, day, s.Hour, s.Minute, s.Second)
-
-	st, _ := time.ParseInLocation("2006-01-02 15:04:05", value, t.Location())
-	if st.Before(t) {
-		st = st.AddDate(0, 0, 1)
+	at := time.Date(year, mon, day, s.Hour, s.Minute, s.Second, 0, t.Location())
+	if at.Before(t) {
+		at = at.AddDate(0, 0, 1)
 	}
-	return st
+	return at
 }
 
 func NewTimeSchedule(spec string) (*TimeSchedule, error) {

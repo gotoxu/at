@@ -18,8 +18,7 @@ type SpecSchedule struct {
 }
 
 func (s *SpecSchedule) At(t time.Time) time.Time {
-	value := fmt.Sprintf("%d-%02d-%02d %02d:%02d:%02d", t.Year(), s.Month, s.Date, s.Hour, s.Minute, s.Second)
-	at, _ := time.ParseInLocation("2006-01-02 15:04:05", value, t.Location())
+	at := time.Date(t.Year(), time.Month(s.Month), s.Date, s.Hour, s.Minute, s.Second, 0, t.Location())
 	return at
 }
 
