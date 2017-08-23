@@ -52,6 +52,15 @@ func Parse(spec string) (Schedule, error) {
 		return NewSpecSchedule(fields[0], fields[1], fields[2])
 	}
 
+	if len(fields) == 4 {
+		plus := strings.TrimSpace(fields[1])
+		if plus != "+" {
+			return nil, fmt.Errorf("unknow spec string, use like: 'HH:MM[am|pm] + number [seconds|minutes|hours|days|weeks]'")
+		}
+
+		return NewSpecAddSchedule(fields[0], fields[2], fields[3])
+	}
+
 	return nil, fmt.Errorf("unknow spec format")
 }
 
