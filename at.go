@@ -5,6 +5,8 @@ import (
 	"runtime"
 	"sort"
 	"time"
+
+	"github.com/pborman/uuid"
 )
 
 type At struct {
@@ -12,6 +14,7 @@ type At struct {
 
 	entries  []*Entry
 	add      chan *Entry
+	remove   chan string
 	stop     chan struct{}
 	snapshot chan []*Entry
 	running  bool
@@ -30,6 +33,9 @@ type Entry struct {
 
 	// Indicates whether the job has been executed
 	Ran bool
+
+	// Job ID
+	ID string
 }
 
 type Schedule interface {
@@ -50,6 +56,7 @@ func NewWithLocation(locaton *time.Location) *At {
 	return &At{
 		entries:  nil,
 		add:      make(chan *Entry),
+		remove:   make(chan string),
 		stop:     make(chan struct{}),
 		snapshot: make(chan []*Entry),
 		running:  false,
@@ -63,6 +70,34 @@ type FuncJob func()
 
 func (f FuncJob) Run() {
 	f()
+}
+
+func (a *At) AddFuncWithID(id, spec string, cmd func()) error {
+	return a.AddJobWithID(id, spec, FuncJob(cmd))
+}
+
+func (a *At) AddJobWithID(id, spec string, cmd Job) error {
+	schedule, err := Parse(spec)
+	if err != nil {
+		return err
+	}
+	a.ScheduleWithID(id, schedule, cmd)
+	return nil
+}
+
+func (a *At) ScheduleWithID(id string, schedule Schedule, cmd Job) {
+	entry := &Entry{
+		Schedule: schedule,
+		Job:      cmd,
+		Ran:      false,
+		ID:       id,
+	}
+	if !a.running {
+		a.entries = append(a.entries, entry)
+		return
+	}
+
+	a.add <- entry
 }
 
 // AddFunc adds a func to the At to be run on the given schedule.
@@ -86,6 +121,7 @@ func (a *At) Schedule(schedule Schedule, cmd Job) {
 		Schedule: schedule,
 		Job:      cmd,
 		Ran:      false,
+		ID:       uuid.NewUUID().String(),
 	}
 	if !a.running {
 		a.entries = append(a.entries, entry)
@@ -111,6 +147,21 @@ func (a *At) Run() {
 	}
 	a.running = true
 	a.run()
+}
+
+func (a *At) Remove(id string) {
+	if !a.running {
+		es := make([]*Entry, 0)
+		for _, e := range a.entries {
+			if e.ID == id {
+				continue
+			}
+			es = append(es, e)
+		}
+		a.entries = es
+		return
+	}
+	a.remove <- id
 }
 
 // Stop stops the at scheduler if it is running; otherwise it does nothing.
@@ -183,6 +234,19 @@ func (a *At) run() {
 					es = append(es, e)
 				}
 				es = append(es, newEntry)
+				a.entries = es
+
+			case id := <-a.remove:
+				timer.Stop()
+				now = a.now()
+
+				es := make([]*Entry, 0)
+				for _, e := range a.entries {
+					if e.ID == id || e.Ran {
+						continue
+					}
+					es = append(es, e)
+				}
 				a.entries = es
 
 			case <-a.snapshot:
