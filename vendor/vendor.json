@@ -3,6 +3,18 @@
 	"ignore": "test",
 	"package": [
 		{
+			"checksumSHA1": "aENNVxKxF9h9PfvTIstiAS5I3Lg=",
+			"path": "github.com/davecgh/go-spew/spew",
+			"revision": "8991bc29aa16c548c550c7ff78260e27b9ab7c73",
+			"revisionTime": "2018-02-21T22:46:20Z"
+		},
+		{
+			"checksumSHA1": "X9dmOxkG6wiAeTGOK49S4t85Wo4=",
+			"path": "github.com/gotoxu/assert",
+			"revision": "53f8030c92e751cc239084abcb24694ca25211df",
+			"revisionTime": "2018-04-01T12:01:56Z"
+		},
+		{
 			"checksumSHA1": "Se195FlZ160eaEk/uVx4KdTPSxU=",
 			"path": "github.com/pborman/uuid",
 			"revision": "e790cca94e6cc75c7064b1332e63811d4aae1a53",
@@ -11,5 +23,5 @@
 			"versionExact": "v1.1"
 		}
 	],
-	"rootPath": "github.com/Jamesxql/at"
+	"rootPath": "github.com/gotoxu/at"
 }
