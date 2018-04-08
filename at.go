@@ -3,25 +3,22 @@ package at
 import (
 	"log"
 	"runtime"
-	"sort"
 	"time"
 
-	"github.com/pborman/uuid"
+	"github.com/gotoxu/at/queue"
 )
 
 type At struct {
 	Log *log.Logger
 
-	entries  []*Entry
-	add      chan *Entry
-	remove   chan string
+	entries  *queue.PriorityQueue
+	add      chan *entry
 	stop     chan struct{}
-	snapshot chan []*Entry
 	running  bool
 	location *time.Location
 }
 
-type Entry struct {
+type entry struct {
 	// The schedule on which this job should be run.
 	Schedule Schedule
 
@@ -30,12 +27,17 @@ type Entry struct {
 
 	// The job to run
 	Job Job
+}
 
-	// Indicates whether the job has been executed
-	Ran bool
+func (e entry) Compare(other queue.Item) int {
+	oe := other.(entry)
+	if e.At.Before(oe.At) {
+		return -1
+	} else if e.At.After(oe.At) {
+		return 1
+	}
 
-	// Job ID
-	ID string
+	return 0
 }
 
 type Schedule interface {
@@ -54,11 +56,9 @@ func New() *At {
 // NewWithLocation returns a new At job runner.
 func NewWithLocation(locaton *time.Location) *At {
 	return &At{
-		entries:  nil,
-		add:      make(chan *Entry),
-		remove:   make(chan string),
+		entries:  queue.NewPriorityQueue(1),
+		add:      make(chan *entry),
 		stop:     make(chan struct{}),
-		snapshot: make(chan []*Entry),
 		running:  false,
 		Log:      nil,
 		location: locaton,
@@ -70,34 +70,6 @@ type FuncJob func()
 
 func (f FuncJob) Run() {
 	f()
-}
-
-func (a *At) AddFuncWithID(id, spec string, cmd func()) error {
-	return a.AddJobWithID(id, spec, FuncJob(cmd))
-}
-
-func (a *At) AddJobWithID(id, spec string, cmd Job) error {
-	schedule, err := Parse(spec)
-	if err != nil {
-		return err
-	}
-	a.ScheduleWithID(id, schedule, cmd)
-	return nil
-}
-
-func (a *At) ScheduleWithID(id string, schedule Schedule, cmd Job) {
-	entry := &Entry{
-		Schedule: schedule,
-		Job:      cmd,
-		Ran:      false,
-		ID:       id,
-	}
-	if !a.running {
-		a.entries = append(a.entries, entry)
-		return
-	}
-
-	a.add <- entry
 }
 
 // AddFunc adds a func to the At to be run on the given schedule.
@@ -117,14 +89,12 @@ func (a *At) AddJob(spec string, cmd Job) error {
 
 // Schedule adds a Job to the At to be run on the given schedule.
 func (a *At) Schedule(schedule Schedule, cmd Job) {
-	entry := &Entry{
+	entry := &entry{
 		Schedule: schedule,
 		Job:      cmd,
-		Ran:      false,
-		ID:       uuid.NewUUID().String(),
 	}
 	if !a.running {
-		a.entries = append(a.entries, entry)
+		a.entries.Push(entry)
 		return
 	}
 
@@ -149,21 +119,6 @@ func (a *At) Run() {
 	a.run()
 }
 
-func (a *At) Remove(id string) {
-	if !a.running {
-		es := make([]*Entry, 0)
-		for _, e := range a.entries {
-			if e.ID == id {
-				continue
-			}
-			es = append(es, e)
-		}
-		a.entries = es
-		return
-	}
-	a.remove <- id
-}
-
 // Stop stops the at scheduler if it is running; otherwise it does nothing.
 func (a *At) Stop() {
 	if !a.running {
@@ -174,17 +129,6 @@ func (a *At) Stop() {
 	a.running = false
 }
 
-// Entries returns a snapshot of the at entries.
-func (a *At) Entries() []*Entry {
-	if a.running {
-		a.snapshot <- nil
-		x := <-a.snapshot
-		return x
-	}
-
-	return a.entrySnapshot()
-}
-
 // Location gets the time zone location
 func (a *At) Location() *time.Location {
 	return a.location
@@ -192,33 +136,32 @@ func (a *At) Location() *time.Location {
 
 func (a *At) run() {
 	now := a.now()
-	for _, entry := range a.entries {
-		entry.At = entry.Schedule.At(now)
-	}
+	// for _, entry := range a.entries {
+	// 	entry.At = entry.Schedule.At(now)
+	// }
 
 	for {
-		sort.Sort(byTime(a.entries))
-
 		var timer *time.Timer
-		if len(a.entries) == 0 || a.entries[0].Ran {
+		e := a.entries.Peek()
+		if e == nil {
 			// If there are no entries yet, just sleep - it still handles new entries
 			// and stop requests.
 			timer = time.NewTimer(100000 * time.Hour)
 		} else {
-			timer = time.NewTimer(a.entries[0].At.Sub(now))
+			entry := e.(entry)
+			entry.At = entry.Schedule.At(now)
+			timer = time.NewTimer(entry.At.Sub(now))
 		}
 
 		for {
 			select {
 			case now = <-timer.C:
 				now = now.In(a.location)
-				for _, e := range a.entries {
-					if e.At.After(now) || e.Ran {
-						break
-					}
 
-					go a.runWithRecovery(e.Job)
-					e.Ran = true
+				e, err := a.entries.Pop()
+				if err == nil && e != nil {
+					entry := e.(entry)
+					go a.runWithRecovery(entry.Job)
 				}
 
 			case newEntry := <-a.add:
@@ -226,56 +169,17 @@ func (a *At) run() {
 				now = a.now()
 				newEntry.At = newEntry.Schedule.At(now)
 
-				es := make([]*Entry, 0, len(a.entries)+1)
-				for _, e := range a.entries {
-					if e.Ran {
-						continue
-					}
-					es = append(es, e)
-				}
-				es = append(es, newEntry)
-				a.entries = es
-
-			case id := <-a.remove:
-				timer.Stop()
-				now = a.now()
-
-				es := make([]*Entry, 0)
-				for _, e := range a.entries {
-					if e.ID == id || e.Ran {
-						continue
-					}
-					es = append(es, e)
-				}
-				a.entries = es
-
-			case <-a.snapshot:
-				a.snapshot <- a.entrySnapshot()
-				continue
+				a.entries.Push(newEntry)
 
 			case <-a.stop:
 				timer.Stop()
+				a.entries.Dispose()
 				return
 			}
 
 			break
 		}
 	}
-}
-
-// entrySnapshot returns a copy of the current at entry list.
-func (a *At) entrySnapshot() []*Entry {
-	entries := []*Entry{}
-	for _, e := range a.entries {
-		entries = append(entries, &Entry{
-			Schedule: e.Schedule,
-			At:       e.At,
-			Job:      e.Job,
-			Ran:      e.Ran,
-		})
-	}
-
-	return entries
 }
 
 // Logs an error to stderr or to the configured error log
