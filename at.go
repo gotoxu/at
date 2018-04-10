@@ -27,7 +27,7 @@ type entry struct {
 }
 
 func (e entry) Compare(other queue.Item) int {
-	oe := other.(entry)
+	oe := other.(*entry)
 	if e.At.Before(oe.At) {
 		return -1
 	} else if e.At.After(oe.At) {
@@ -131,7 +131,7 @@ func (a *At) run() {
 			// and stop requests.
 			timer = time.NewTimer(100000 * time.Hour)
 		} else {
-			entry := e.(entry)
+			entry := e.(*entry)
 			timer = time.NewTimer(entry.At.Sub(now))
 		}
 
@@ -142,7 +142,7 @@ func (a *At) run() {
 
 				e, err := a.entries.Pop()
 				if err == nil && e != nil {
-					entry := e.(entry)
+					entry := e.(*entry)
 					go a.runWithRecovery(entry.Job)
 				}
 
