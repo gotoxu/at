@@ -19,9 +19,6 @@ type At struct {
 }
 
 type entry struct {
-	// The schedule on which this job should be run.
-	Schedule Schedule
-
 	// The time the job will run.
 	At time.Time
 
@@ -38,10 +35,6 @@ func (e entry) Compare(other queue.Item) int {
 	}
 
 	return 0
-}
-
-type Schedule interface {
-	At(t time.Time) time.Time
 }
 
 type Job interface {
@@ -73,25 +66,15 @@ func (f FuncJob) Run() {
 }
 
 // AddFunc adds a func to the At to be run on the given schedule.
-func (a *At) AddFunc(spec string, cmd func()) error {
-	return a.AddJob(spec, FuncJob(cmd))
+func (a *At) AddFunc(t time.Time, cmd func()) {
+	a.AddJob(t, FuncJob(cmd))
 }
 
 // AddJob adds a Job to the At to be run on the given schedule.
-func (a *At) AddJob(spec string, cmd Job) error {
-	schedule, err := Parse(spec)
-	if err != nil {
-		return err
-	}
-	a.Schedule(schedule, cmd)
-	return nil
-}
-
-// Schedule adds a Job to the At to be run on the given schedule.
-func (a *At) Schedule(schedule Schedule, cmd Job) {
+func (a *At) AddJob(t time.Time, cmd Job) {
 	entry := &entry{
-		Schedule: schedule,
-		Job:      cmd,
+		Job: cmd,
+		At:  t,
 	}
 	if !a.running {
 		a.entries.Push(entry)
@@ -149,7 +132,6 @@ func (a *At) run() {
 			timer = time.NewTimer(100000 * time.Hour)
 		} else {
 			entry := e.(entry)
-			entry.At = entry.Schedule.At(now)
 			timer = time.NewTimer(entry.At.Sub(now))
 		}
 
@@ -166,9 +148,6 @@ func (a *At) run() {
 
 			case newEntry := <-a.add:
 				timer.Stop()
-				now = a.now()
-				newEntry.At = newEntry.Schedule.At(now)
-
 				a.entries.Push(newEntry)
 
 			case <-a.stop:
