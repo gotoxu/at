@@ -54,7 +54,7 @@ func (items *priorityItems) push(item Item) {
 		items.swap(index, parent)
 
 		index = parent
-		parent = int((index - 1/2))
+		parent = int((index - 1) / 2)
 	}
 }
 
